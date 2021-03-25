@@ -45,17 +45,17 @@ def manage_dcps_object(dp, topic_type, topic):
         return sample
 
 
-def print_sample(fp, sample, print_json):
+def print_object(fp, obj, print_json):
     if print_json:
-        json.dump(sample, fp, indent=4)
+        json.dump(obj, fp, indent=4)
     else:
-        fp.write(str(sample))
+        fp.write(str(obj))
 
 
 def main():
     args = create_parser()
     dp = DomainParticipant(args.id)
-    sample = []
+    obj = []
 
     if args.topics:
         if args.topics == "dcpsparticipant":
@@ -67,20 +67,20 @@ def main():
         else:
             type = "PUBLICATION"
             topic = BuiltinTopicDcpsPublication
-        sample.append(manage_dcps_object(dp, type, topic))
+        obj.append(manage_dcps_object(dp, type, topic))
 
     if args.a is True:
         type = ["PARTICIPANT", "SUBSCRIPTION", "PUBLICATION"]
         topic = [BuiltinTopicDcpsParticipant, BuiltinTopicDcpsSubscription, BuiltinTopicDcpsPublication]
         for i in range(len(type)):
-            sample.append(manage_dcps_object(dp, type[i], topic[i]))
+            obj.append(manage_dcps_object(dp, type[i], topic[i]))
 
     if not args.filename:
-        print_sample(sys.stdout, sample, args.json)
+        print_object(sys.stdout, obj, args.json)
     else:
         with open(args.filename, mode="w") as fp:
             try:
-                print_sample(fp, sample, args.json)
+                print_object(fp, obj, args.json)
                 fp.close()
                 return 0
             except Exception:
