@@ -25,7 +25,6 @@ def create_parser():
 def manage_dcps_object(dp, topic_type, topic):
     dr = BuiltinDataReader(dp, topic)
     samples = dr.take_iter(timeout=duration(milliseconds=10))
-    sample = None
 
     for sample in samples:
         if topic_type == 'PARTICIPANT':
@@ -43,7 +42,6 @@ def manage_dcps_object(dp, topic_type, topic):
                     "qos": sample.qos.asdict()
                 }]
             }
-    if sample is not None:
         return sample
 
 
