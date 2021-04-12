@@ -12,13 +12,6 @@ from cyclonedds.util import duration
 from vehicles import Vehicle
 
 
-def create_parser():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-a", action="store_true", help="change qos")
-    args = parser.parse_args()
-    return args
-
-
 def print_cart(cart, writer, message):
     while True:
         cart.x += random.choice([-1, 0, 1])
