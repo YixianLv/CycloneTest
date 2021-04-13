@@ -34,7 +34,7 @@ def print_object(fp, obj, print_json):
 result = []
 
 
-def open_file(filename, obj, print_json):
+def open_file(filename, obj, print_json, topic_type):
     if not filename:
         print_object(sys.stdout, obj, print_json)
     else:
@@ -62,16 +62,17 @@ def manage_samples(dr, samples, topic_type, filename, print_json):
         elif ((topic_type == "SUBSCRIPTION" and sample.key == dr.get_guid()) or
               topic_type == "PUBLICATION"):
             sample = {
-                topic_type: [{
+                "topic_type": [{
                     "key": str(sample.key),
                     "participant_key": str(sample.participant_key),
                     "topic_name": sample.topic_name,
                     "qos": sample.qos.asdict()
                 }]
             }
+            # print(sample.get(topic_type))
             obj.append(sample)
     if len(obj):
-        open_file(filename, obj, print_json)
+        open_file(filename, obj, print_json, topic_type)
 
 
 def manage_dcps_object(dp, dr, topic_type, filename, print_json):
