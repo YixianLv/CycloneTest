@@ -11,132 +11,150 @@ from cyclonedds.util import duration
 from cyclonedds.core import WaitSet, ReadCondition, ViewState, InstanceState, SampleState
 
 
+class TopicManager:
+    def __init__(self, reader, topic_type, args):
+        self.reader = reader
+        self.topic_type = topic_type
+        self.console_print = not args.filename
+        self.enable_json = args.json
+        self.enable_view = args.v
+        self.tracked_entities = {}
+        self.qoses = {}
+        self.read_cond = ReadCondition(reader, ViewState.Any | InstanceState.Alive | SampleState.NotRead)
+        self.disposed_cond = ReadCondition(reader, ViewState.Any | InstanceState.NotAliveDisposed | SampleState.Any)
+
+    def poll(self):
+        samples = self.reader.take(N=100, condition=self.read_cond)
+        disposed_samples = self.reader.take(N=100, condition=self.disposed_cond)
+        if len(samples) or len(disposed_samples):
+            if len(samples):
+                manage_samples(self, samples)
+                check_qos_changes(self, samples)
+            else:
+                print("\n--- " + self.topic_type + " disposed ---")
+                manage_samples(self, disposed_samples)
+
+        if self.console_print and self.tracked_entities and samples:
+            Output.to_console(self, self.tracked_entities)
+
+    def add_to_waitset(self, waitset):
+        waitset.attach(self.read_cond)
+        waitset.attach(self.disposed_cond)
+
+
+class Output(TopicManager):
+    def to_file(self, fp):
+        for i in range(len(self)):
+            if self[i].tracked_entities:
+                if self[i].enable_json:
+                    json.dump(self[i].tracked_entities, fp, indent=4)
+                else:
+                    fp.write(str(self[i].tracked_entities))
+
+    def to_console(self, obj):
+        if self.enable_json:
+            json.dump(obj, sys.stdout, indent=4)
+        else:
+            sys.stdout.write(str(obj))
+            sys.stdout.flush()
+
+
+class parse_args:
+    def __init__(self, args, dp):
+        if args.topic:
+            if args.topic == "dcpsparticipant":
+                self.topic = [["PARTICIPANT", BuiltinTopicDcpsParticipant]]
+            elif args.topic == "dcpssubscription":
+                self.topic = [["SUBSCRIPTION", BuiltinTopicDcpsSubscription]]
+            else:
+                self.topic = [["PUBLICATION", BuiltinTopicDcpsPublication]]
+
+        if args.a is True:
+            self.topic = [["PARTICIPANT", BuiltinTopicDcpsParticipant],
+                          ["SUBSCRIPTION", BuiltinTopicDcpsSubscription],
+                          ["PUBLICATION", BuiltinTopicDcpsPublication]]
+
+
 def create_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--id", type=int, help="define the domain participant id", default=0)
-    parser.add_argument("--filename", type=str, help="write to file")
-    parser.add_argument("--json", action="store_true", help="print output in JSON format")
-    parser.add_argument("-v", action="store_true", help="view the sample when Qos changes")
+    parser.add_argument("--id", type=int, help="Define the domain participant id", default=0)
+    parser.add_argument("--filename", type=str, help="Write to file")
+    parser.add_argument("--json", action="store_true", help="Print output in JSON format")
+    parser.add_argument("--watch", action="store_true", help="Watch for data reader & writer & qoses changes")
+    parser.add_argument("-v", action="store_true", help="View the sample when Qos changes (available in --watch mode")
 
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("-a", action="store_true", help="for all topics")
-    group.add_argument("-t", "--topics", choices=["dcpsparticipant", "dcpssubscription", "dcpspublication"])
+    group.add_argument("-t", "--topic", choices=["dcpsparticipant", "dcpssubscription", "dcpspublication"])
     args = parser.parse_args()
     return args
 
 
-def print_object(fp, obj, print_json):
-    if print_json:
-        json.dump(obj, fp, indent=4)
-    else:
-        fp.write("\n" + str(obj) + "\n")
-        fp.flush()
-
-
-full_result = []
-qoses = {}
-
-
-def write_to_file(filename, print_json, obj, topic_type):
-    result = {}
-    result[topic_type] = obj
-    if not filename:
-        print_object(sys.stdout, result, print_json)
-    else:
-        full_result.append(result)
-        with open(filename, mode="w") as fp:
-            try:
-                print_object(fp, full_result, print_json)
-                print("Write to file " + filename)
-                fp.close()
-                return 0
-            except Exception:
-                return 1
-
-
-def check_qos_changes(sample, topic_type, obj, args):
-    key = sample.key
-    if qoses.get(key, 0) == 0:
-        qoses[key] = sample.qos
-    elif qoses[key] != sample.qos:
-        for i in qoses[key]:
-            if (qoses[key][i] != sample.qos[i]):
-                print("\n\033[1mQos changed for the", topic_type, "of topic '", sample.topic_name, "' :\n ",
-                      str(qoses[key][i]), "->", str(sample.qos[i]), '\033[0m')
-                qoses[key] = sample.qos
-                if not args.v:
-                    obj.pop()
-
-
-def manage_samples(dr, samples, topic_type, args):
-    obj = []
+def manage_samples(obj, samples):
     for sample in samples:
-        if topic_type == "PARTICIPANT":
-            data = {
+        if obj.topic_type == "PARTICIPANT":
+            obj.tracked_entities = {
+                obj.topic_type: [{
                     "key": str(sample.key)
-                   }
-            obj.append(data)
-
-        elif ((topic_type == "SUBSCRIPTION" and sample.key == dr.get_guid())
-              or topic_type == "PUBLICATION"):
-            data = {"key": str(sample.key),
+                    }]
+                }
+        elif ((obj.topic_type == "SUBSCRIPTION" and sample.key == obj.reader.get_guid())
+              or obj.topic_type == "PUBLICATION"):
+            obj.tracked_entities = {
+                obj.topic_type: [{
+                    "key": str(sample.key),
                     "participant_key": str(sample.participant_key),
                     "topic_name": sample.topic_name,
                     "qos": sample.qos.asdict()
-                    }
-            obj.append(data)
-
-            check_qos_changes(sample, topic_type, obj, args)
-
-    if len(obj):
-        write_to_file(args.filename, args.json, obj, topic_type)
+                    }]
+                }
 
 
-def manage_dcps_object(dp, dr, topic_type, args):
-    waitset = WaitSet(dp)
-    condition = ReadCondition(dr, ViewState.Any | InstanceState.Alive | SampleState.NotRead)
-    disposed_cond = ReadCondition(dr, ViewState.Any | InstanceState.NotAliveDisposed | SampleState.Any)
-    waitset.attach(condition)
-
-    samples = dr.take(condition=condition)
-    disposed_samples = dr.take(condition=disposed_cond)
-
-    if len(samples) or len(disposed_samples):
-        if len(samples):
-            manage_samples(dr, samples, topic_type, args)
-        else:
-            print("\n--- " + topic_type + " disposed ---")
-            manage_samples(dr, disposed_samples, topic_type, args)
-    else:
-        waitset.wait(duration(milliseconds=20))
+def check_qos_changes(obj, samples):
+    for sample in samples:
+        key = sample.key
+        if obj.qoses.get(key, 0) == 0:
+            obj.qoses[key] = sample.qos
+        elif obj.qoses[key] != sample.qos:
+            for i in obj.qoses[key]:
+                if (obj.qoses[key][i] != sample.qos[i]):
+                    print("\n\033[1mQos changed for the", obj.topic_type, "of topic '", sample.topic_name, "' :\n ",
+                          str(obj.qoses[key][i]), "->", str(sample.qos[i]), '\033[0m')
+            obj.qoses[key] = sample.qos
+            if not obj.enable_view and obj.console_print:
+                obj.tracked_entities = 0
 
 
 def main():
+    manager = []
     args = create_parser()
     dp = DomainParticipant(args.id)
+    topics = parse_args(args, dp)
+    waitset = WaitSet(dp)
 
-    if args.topics:
-        if args.topics == "dcpsparticipant":
-            type = "PARTICIPANT"
-            topic = BuiltinTopicDcpsParticipant
-        elif args.topics == "dcpssubscription":
-            type = "SUBSCRIPTION"
-            topic = BuiltinTopicDcpsSubscription
-        else:
-            type = "PUBLICATION"
-            topic = BuiltinTopicDcpsPublication
-        dr = BuiltinDataReader(dp, topic)
-        while True:
-            manage_dcps_object(dp, dr, type, args)
+    for type, topic in topics.topic:
+        manager.append(TopicManager(BuiltinDataReader(dp, topic), type, args))
+        manager[-1].add_to_waitset(waitset)
+    if args.watch:
+        try:
+            while True:
+                for i in range(len(manager)):
+                    waitset.wait(duration(milliseconds=20))
+                    manager[i].poll()
+        except KeyboardInterrupt:
+            pass
+    else:
+        for i in range(len(manager)):
+            manager[i].poll()
 
-    if args.a is True:
-        type = ["PARTICIPANT", "SUBSCRIPTION", "PUBLICATION"]
-        dr = [BuiltinDataReader(dp, BuiltinTopicDcpsParticipant),
-              BuiltinDataReader(dp, BuiltinTopicDcpsSubscription),
-              BuiltinDataReader(dp, BuiltinTopicDcpsPublication)]
-        while True:
-            for i in range(len(type)):
-                manage_dcps_object(dp, dr[i], type[i], args)
+    if args.filename:
+        try:
+            with open(args.filename, 'w') as f:
+                Output.to_file(manager, f)
+        except OSError:
+            print("could not open file")
+            return 1
+    return 0
 
 
 if __name__ == '__main__':
