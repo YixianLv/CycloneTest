@@ -28,10 +28,10 @@ class TopicManager:
             self.manage_samples(samples)
             self.check_qos_changes(samples)
         if len(disposed_samples):
-            print("\n--- " + self.topic_type + " disposed ---")
+            print("\n--- ", self.topic_type, "disposed ---")
             self.manage_samples(disposed_samples)
 
-        if self.console_print and self.tracked_entities and samples:
+        if self.console_print and self.tracked_entities and (samples or disposed_samples):
             Output.to_console(self)
 
     def manage_samples(self, samples):
@@ -86,7 +86,7 @@ class Output:
             json.dump(self.tracked_entities, sys.stdout, indent=4)
         else:
             for topic, value in self.tracked_entities.items():
-                print("\033[1m", topic, "\033[0m", "\n", value)
+                print("\033[1m", topic, "\033[0m", "\n", value, "\n")
 
 
 class parse_args:
