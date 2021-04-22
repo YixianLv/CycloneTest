@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-
 import sys
 import json
 import argparse
-
 from cyclonedds.domain import DomainParticipant
 from cyclonedds.builtin import (BuiltinDataReader, BuiltinTopicDcpsParticipant,
                                 BuiltinTopicDcpsSubscription,  BuiltinTopicDcpsPublication)
@@ -26,23 +24,55 @@ class TopicManager:
     def poll(self):
         samples = self.reader.take(N=100, condition=self.read_cond)
         disposed_samples = self.reader.take(N=100, condition=self.disposed_cond)
-        if len(samples) or len(disposed_samples):
-            if len(samples):
-                manage_samples(self, samples)
-                check_qos_changes(self, samples)
-            else:
-                print("\n--- " + self.topic_type + " disposed ---")
-                manage_samples(self, disposed_samples)
+        if len(samples):
+            self.manage_samples(samples)
+            self.check_qos_changes(samples)
+        if len(disposed_samples):
+            print("\n--- " + self.topic_type + " disposed ---")
+            self.manage_samples(disposed_samples)
 
         if self.console_print and self.tracked_entities and samples:
-            Output.to_console(self, self.tracked_entities)
+            Output.to_console(self)
+
+    def manage_samples(self, samples):
+        for sample in samples:
+            if self.topic_type == "PARTICIPANT":
+                self.tracked_entities = {
+                    self.topic_type: [{
+                        "key": str(sample.key)
+                        }]
+                    }
+            elif ((self.topic_type == "SUBSCRIPTION" and sample.key == self.reader.get_guid())
+                  or self.topic_type == "PUBLICATION"):
+                self.tracked_entities = {
+                    self.topic_type: [{
+                        "key": str(sample.key),
+                        "participant_key": str(sample.participant_key),
+                        "topic_name": sample.topic_name,
+                        "qos": sample.qos.asdict()
+                        }]
+                    }
+
+    def check_qos_changes(self, samples):
+        for sample in samples:
+            key = sample.key
+            if self.qoses.get(key, 0) == 0:
+                self.qoses[key] = sample.qos
+            elif self.qoses[key] != sample.qos:
+                for i in self.qoses[key]:
+                    if (self.qoses[key][i] != sample.qos[i]):
+                        print("\n\033[1mQos changed for the", self.topic_type, "of topic '", sample.topic_name, "' :\n ",
+                              str(self.qoses[key][i]), "->", str(sample.qos[i]), '\033[0m')
+                self.qoses[key] = sample.qos
+                if not self.enable_view and self.console_print:
+                    self.tracked_entities = 0
 
     def add_to_waitset(self, waitset):
         waitset.attach(self.read_cond)
         waitset.attach(self.disposed_cond)
 
 
-class Output(TopicManager):
+class Output:
     def to_file(self, fp):
         for i in range(len(self)):
             if self[i].tracked_entities:
@@ -51,16 +81,16 @@ class Output(TopicManager):
                 else:
                     fp.write(str(self[i].tracked_entities))
 
-    def to_console(self, obj):
+    def to_console(self):
         if self.enable_json:
-            json.dump(obj, sys.stdout, indent=4)
+            json.dump(self.tracked_entities, sys.stdout, indent=4)
         else:
-            sys.stdout.write(str(obj))
-            sys.stdout.flush()
+            for topic, value in self.tracked_entities.items():
+                print("\033[1m", topic, "\033[0m", "\n", value)
 
 
 class parse_args:
-    def __init__(self, args, dp):
+    def __init__(self, args):
         if args.topic:
             if args.topic == "dcpsparticipant":
                 self.topic = [["PARTICIPANT", BuiltinTopicDcpsParticipant]]
@@ -82,7 +112,6 @@ def create_parser():
     parser.add_argument("--json", action="store_true", help="Print output in JSON format")
     parser.add_argument("--watch", action="store_true", help="Watch for data reader & writer & qoses changes")
     parser.add_argument("-v", action="store_true", help="View the sample when Qos changes (available in --watch mode")
-
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("-a", action="store_true", help="for all topics")
     group.add_argument("-t", "--topic", choices=["dcpsparticipant", "dcpssubscription", "dcpspublication"])
@@ -90,46 +119,11 @@ def create_parser():
     return args
 
 
-def manage_samples(obj, samples):
-    for sample in samples:
-        if obj.topic_type == "PARTICIPANT":
-            obj.tracked_entities = {
-                obj.topic_type: [{
-                    "key": str(sample.key)
-                    }]
-                }
-        elif ((obj.topic_type == "SUBSCRIPTION" and sample.key == obj.reader.get_guid())
-              or obj.topic_type == "PUBLICATION"):
-            obj.tracked_entities = {
-                obj.topic_type: [{
-                    "key": str(sample.key),
-                    "participant_key": str(sample.participant_key),
-                    "topic_name": sample.topic_name,
-                    "qos": sample.qos.asdict()
-                    }]
-                }
-
-
-def check_qos_changes(obj, samples):
-    for sample in samples:
-        key = sample.key
-        if obj.qoses.get(key, 0) == 0:
-            obj.qoses[key] = sample.qos
-        elif obj.qoses[key] != sample.qos:
-            for i in obj.qoses[key]:
-                if (obj.qoses[key][i] != sample.qos[i]):
-                    print("\n\033[1mQos changed for the", obj.topic_type, "of topic '", sample.topic_name, "' :\n ",
-                          str(obj.qoses[key][i]), "->", str(sample.qos[i]), '\033[0m')
-            obj.qoses[key] = sample.qos
-            if not obj.enable_view and obj.console_print:
-                obj.tracked_entities = 0
-
-
 def main():
     manager = []
     args = create_parser()
     dp = DomainParticipant(args.id)
-    topics = parse_args(args, dp)
+    topics = parse_args(args)
     waitset = WaitSet(dp)
 
     for type, topic in topics.topic:

@@ -19,7 +19,7 @@ def change_qos(qos):
 
 sample = "hi"
 qos = Qos(
-            Policy.Userdata(data=sample),
+            Policy.Userdata(data=sample.encode()),
             Policy.OwnershipStrength(10)
          )
 
@@ -34,6 +34,6 @@ qos = Qos(Policy.OwnershipStrength(20))
 change_qos(qos)
 
 sample = input("input new user data: ")
-qos = Qos(Policy.Userdata(data=sample))
+qos = Qos(Policy.Userdata(data=sample.encode()))
 change_qos(qos)
 time.sleep(5)
