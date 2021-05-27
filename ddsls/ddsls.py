@@ -16,7 +16,9 @@ class TopicManager:
         self.console_print = not args.filename
         self.enable_json = args.json
         self.enable_view = args.verbose
+        self.dp_key = reader.participant.guid
         self.tracked_entities = {}
+        self.tracked_data = {}
         self.qoses = {}
         self.strings = ""
         self.read_cond = ReadCondition(reader, ViewState.Any | InstanceState.Alive | SampleState.NotRead)
@@ -26,49 +28,57 @@ class TopicManager:
         samples = self.reader.take(N=100, condition=self.read_cond)
         disposed_samples = self.reader.take(N=100, condition=self.disposed_cond)
         if samples:
-            print("\n--- New", self.topic_type, "------------", end="", flush=True)
-            self.manage_samples(samples)
-            self.check_qos_changes(samples)
+            for sample in samples:
+                if ((self.topic_type == "PARTICIPANT" and sample.key != self.dp_key)
+                   or (self.topic_type != "PARTICIPANT" and sample.participant_key != self.dp_key)):
+                    print("\n--- New", self.topic_type, "------------", end="", flush=True)
+                    self.manage_samples(sample)
+                    self.check_qos_changes(sample)
         if disposed_samples:
-            print("\n--- Disposed", self.topic_type, "------------", end="", flush=True)
-            self.manage_samples(disposed_samples)
+            for disposed_sample in disposed_samples:
+                print("\n--- Disposed", self.topic_type, "------------", end="", flush=True)
+                self.manage_samples(disposed_sample)
 
         if self.console_print and self.tracked_entities and (samples or disposed_samples):
             Output.to_console(self)
 
-    def manage_samples(self, samples):
-        for sample in samples:
-            if self.topic_type == "PARTICIPANT":
-                self.tracked_entities = {
-                    self.topic_type: {
-                        "key": str(sample.key)
-                        }
+    def manage_samples(self, sample):
+        if self.topic_type == "PARTICIPANT":
+            self.tracked_entities = {
+                self.topic_type: {
+                    "key": str(sample.key)
                     }
-            elif ((self.topic_type == "SUBSCRIPTION" and sample.key == self.reader.get_guid())
-                  or self.topic_type == "PUBLICATION"):
-                self.tracked_entities = {
-                    self.topic_type: {
-                        "key": str(sample.key),
-                        "participant_key": str(sample.participant_key),
+                }
+        else:
+            if sample.topic_name is not None:
+                self.tracked_data = {
+                    sample.key: {
                         "topic_name": sample.topic_name,
-                        "qos": sample.qos.asdict()
+                        "qoses": sample.qos
                         }
                     }
+            self.tracked_entities = {
+                self.topic_type: {
+                    "key": str(sample.key),
+                    "participant_key": str(sample.participant_key),
+                    "topic_name": self.tracked_data[sample.key]["topic_name"],
+                    "qos": self.tracked_data[sample.key]["qoses"].asdict()
+                    }
+                }
 
-    def check_qos_changes(self, samples):
-        for sample in samples:
-            key = sample.key
-            if self.qoses.get(key, 0) == 0:
-                self.qoses[key] = sample.qos
-            elif self.qoses[key] != sample.qos:
-                for i in self.qoses[key]:
-                    if self.qoses[key][i] != sample.qos[i]:
-                        print("\n\033[1mQos changed:\033[0m\nfor the", self.topic_type, "of topic '",
-                              sample.topic_name, "'", "\nwith key =", sample.key, ":\n ",
-                              "\033[1m", str(self.qoses[key][i]), "->", str(sample.qos[i]), "\033[0m")
-                self.qoses[key] = sample.qos
-                if not self.enable_view and self.console_print:
-                    self.tracked_entities = 0
+    def check_qos_changes(self, sample):
+        key = sample.key
+        if self.qoses.get(key, 0) == 0:
+            self.qoses[key] = sample.qos
+        elif self.qoses[key] != sample.qos:
+            for i in self.qoses[key]:
+                if self.qoses[key][i] != sample.qos[i]:
+                    print("\n\033[1mQos changed:\033[0m\nfor the", self.topic_type, "of topic '",
+                          sample.topic_name, "'", "\nwith key =", sample.key, ":\n ",
+                          "\033[1m", str(self.qoses[key][i]), "->", str(sample.qos[i]), "\033[0m")
+            self.qoses[key] = sample.qos
+            if not self.enable_view and self.console_print:
+                self.tracked_entities = 0
 
     def add_to_waitset(self, waitset):
         waitset.attach(self.read_cond)
