@@ -7,7 +7,7 @@ import json
 from dataclasses import fields
 from datastruct import Integer, String
 from util import qos_help_msg
-from cyclonedds.core import WaitSet, ReadCondition, ViewState, InstanceState, SampleState
+from cyclonedds.core import DDSException, WaitSet, ReadCondition, ViewState, InstanceState, SampleState
 from cyclonedds.domain import DomainParticipant
 from cyclonedds.pub import DataWriter
 from cyclonedds.sub import DataReader
@@ -20,12 +20,15 @@ class Topicmanger:
     def __init__(self, args, dp, qos, waitset):
         self.topic_name = args.topic
         self.seq = -1
-        int_topic = Topic(dp, self.topic_name + "int", Integer, qos=qos)
-        str_topic = Topic(dp, self.topic_name, String, qos=qos)
-        self.int_writer = DataWriter(dp, int_topic, qos=qos)
-        self.int_reader = DataReader(dp, int_topic, qos=qos)
-        self.str_writer = DataWriter(dp, str_topic, qos=qos)
-        self.str_reader = DataReader(dp, str_topic, qos=qos)
+        try:
+            int_topic = Topic(dp, self.topic_name + "int", Integer, qos=qos)
+            str_topic = Topic(dp, self.topic_name, String, qos=qos)
+            self.int_writer = DataWriter(dp, int_topic, qos=qos)
+            self.int_reader = DataReader(dp, int_topic, qos=qos)
+            self.str_writer = DataWriter(dp, str_topic, qos=qos)
+            self.str_reader = DataReader(dp, str_topic, qos=qos)
+        except DDSException:
+            raise SystemExit("Error: The arguments inputted are considered invalid for cyclonedds.")
         self.read_cond = ReadCondition(self.int_reader, ViewState.Any | InstanceState.Alive | SampleState.NotRead)
         waitset.attach(self.read_cond)
 
@@ -46,14 +49,13 @@ class Topicmanger:
             # print("Subscribed: {seq =", sample.seq, ", keyval =", sample.keyval, "}")
 
 
-class Qosmanager(Topicmanger):
+class Qosmanager():
     def __init__(self):
         self.parse_qos = re.compile(r"^([\w\d\-\.]+)\s([\w\d\.\-]+(?:,\s[\w\d\.\-]+)*)?$")
-        self.special_qos = ["Partition", "DurabilityService", "PresentationAccessScope.Instance",
-                            "PresentationAccessScope.Topic", "PresentationAccessScope.Group",
-                            "Userdata", "Groupdata", "Topicdata"]
-        self.special_scope = ["Partition", "DurabilityService", "PresentationAccessScope",
-                              "Userdata", "Groupdata", "Topicdata"]
+        self.special_qos = ["Partition", "DurabilityService", "WriterDataLifecycle",
+                            "Userdata", "Groupdata", "Topicdata", "PresentationAccessScope.Instance",
+                            "PresentationAccessScope.Topic", "PresentationAccessScope.Group"]
+        self.special_scope = self.special_qos[:6] + ["PresentationAccessScope"]
 
     def construct_policy(self, txt):
         policy_name = None
@@ -109,7 +111,7 @@ class Qosmanager(Topicmanger):
             return policy(args)
 
         elif policy.__scope__ == "DurabilityService":  # subpolicy with History
-            sp_qos = re.compile(r"^([\w\d\-\.]+)\s([\w\d\.\-]+),\s(Policy.History.Keep[\w\d\-\.\s]+)([,\s\w\d\.\-]+)*?$")
+            sp_qos = re.compile(r"^([\w\d\-\.]+)\s([\w\d\.\-]+),\s([\w\d\-\.\s]+)([,\s\w\d\.\-]+)*?$")
             m = sp_qos.match(txt)
             if not m:
                 raise Exception(f"Invalid format for qos '{txt}'")
@@ -119,7 +121,7 @@ class Qosmanager(Topicmanger):
             for val in m.group(4).strip(", ").split(", "):
                 input_args.append([val])
             if len(input_args) != len(fields):
-                raise Exception(f"Policy.{policy.__scope__} requires {len(fields)} arguments but {len(input_args)} were provided.")
+                raise Exception(f"{policy.__scope__} requires {len(fields)} arguments but {len(input_args)} were provided.")
 
             args = []
             # Check all the arguments except the History subpolicy
@@ -131,6 +133,8 @@ class Qosmanager(Topicmanger):
                         raise Exception(f"Incorrect type provided for an argument, {e}")
 
             # Check the History subpolicy
+            if not input_args[1][0].startswith("Policy."):
+                input_args[1][0] = f"Policy.{input_args[1][0]}"
             if input_args[1][0] == "Policy.History.KeepLast" and (int(input_args[1][1])):
                 hist_policy = [Qos._policy_mapper["Policy.History.KeepLast"](int(input_args[1][1]))]
             elif input_args[1][0] == "Policy.History.KeepAll":
@@ -139,10 +143,9 @@ class Qosmanager(Topicmanger):
                 raise Exception(f"Invalid format or argument for Policy.History '{input_args[1]}'")
 
             args = args[:1] + hist_policy + args[1:]
-            print(f"args = {args}")
             return policy(*args)
 
-        elif policy.__scope__ == "PresentationAccessScope":  # bool
+        elif policy.__scope__ in ["PresentationAccessScope", "WriterDataLifecycle"]:  # bool
             args = match.group(2).strip().split(', ')
             args = [json.loads(arg.lower()) for field, arg in zip(fields, args)]
             return policy(*args)
