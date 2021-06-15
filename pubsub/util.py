@@ -129,15 +129,3 @@ reader_qos_mapper = {
     "Policy.TimeBasedFilter",
     "Policy.Userdata"
 }
-
-
-RxO_qos_mapper = {
-    "Policy.Deadline",
-    "Policy.DestinationOrder",
-    "Policy.Durability",
-    "Policy.LatencyBudget",
-    "Policy.Liveliness",
-    "Policy.Ownership",
-    "Policy.Reliability",
-    "Policy.PresentationAccessScope"
-}

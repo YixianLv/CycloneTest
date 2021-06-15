@@ -7,7 +7,7 @@ import json
 from dataclasses import fields
 from datastruct import Integer, String
 from util import qos_help_msg, topic_qos_mapper, pubsub_qos_mapper, writer_qos_mapper, reader_qos_mapper
-from cyclonedds.core import DDSException, WaitSet, ReadCondition, ViewState, InstanceState, SampleState
+from cyclonedds.core import Listener, DDSException, WaitSet, ReadCondition, ViewState, InstanceState, SampleState
 from cyclonedds.domain import DomainParticipant
 from cyclonedds.pub import Publisher, DataWriter
 from cyclonedds.sub import Subscriber, DataReader
@@ -16,20 +16,27 @@ from cyclonedds.util import duration
 from cyclonedds.qos import Qos
 
 
+class QosListener(Listener):
+    def on_requested_incompatible_qos(self, reader, status):
+        print("WARNING: The Qos requested by the reader is incompatible to the Qos offered by the writer. " +
+              "PubSub may not be available.")
+
+
 class Topicmanger():
     def __init__(self, args, dp, qos, waitset):
         self.topic_name = args.topic
         self.seq = -1
         tqos, pqos, sqos, wqos, rqos = qos
         try:
+            listener = QosListener()
             int_topic = Topic(dp, self.topic_name + "int", Integer, qos=tqos)
             str_topic = Topic(dp, self.topic_name, String, qos=tqos)
-            pub = Publisher(dp, qos=pqos)
-            sub = Subscriber(dp, qos=sqos)
-            self.int_writer = DataWriter(pub, int_topic, qos=wqos)
-            self.int_reader = DataReader(sub, int_topic, qos=rqos)
-            self.str_writer = DataWriter(pub, str_topic, qos=wqos)
-            self.str_reader = DataReader(sub, str_topic, qos=rqos)
+            self.pub = Publisher(dp, qos=pqos)
+            self.sub = Subscriber(dp, qos=sqos)
+            self.int_writer = DataWriter(self.pub, int_topic, qos=wqos)
+            self.int_reader = DataReader(self.sub, int_topic, qos=rqos, listener=listener)
+            self.str_writer = DataWriter(self.pub, str_topic, qos=wqos)
+            self.str_reader = DataReader(self.sub, str_topic, qos=rqos)
         except DDSException:
             raise SystemExit("Error: The arguments inputted are considered invalid for cyclonedds.")
         self.read_cond = ReadCondition(self.int_reader, ViewState.Any | InstanceState.Alive | SampleState.NotRead)
@@ -49,12 +56,11 @@ class Topicmanger():
             print("Subscribed:", sample)
         for sample in self.str_reader.take(N=100):
             print("Subscribed:", sample)
-            # print("Subscribed: {seq =", sample.seq, ", keyval =", sample.keyval, "}")
 
 
 class Qosmanager():
     def __init__(self):
-        self.parse_qos = re.compile(r"^([\w\d\-\.]+)\s([\w\d\.\-]+(?:,\s[\w\d\.\-]+)*)?$")
+        self.parse_qos = re.compile(r"^([\w\d\-\.]+)(\s[\w\d\.\-]+(?:,\s[\w\d\.\-]+)*)?$")
         self.special_qos = ["Partition", "DurabilityService", "WriterDataLifecycle",
                             "Userdata", "Groupdata", "Topicdata", "PresentationAccessScope.Instance",
                             "PresentationAccessScope.Topic", "PresentationAccessScope.Group"]
@@ -200,7 +206,7 @@ Inapplicable qos will be ignored.''')
         print(qos_help_msg)
         sys.exit(0)
     if args.entity and not args.qos:
-        raise SystemExit("the following arguments are required: -q/--qos")
+        raise SystemExit("Error: The following argument is required: -q/--qos")
     return args
 
 
