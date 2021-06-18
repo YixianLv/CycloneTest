@@ -15,12 +15,24 @@ class String:
 
 
 @cdr
-class Array:
+class IntArray:
     seq: int
     keyval: array[int, 3]
 
 
 @cdr
-class Sequence:
+class StrArray:
+    seq: int
+    keyval: array[str, 5]
+
+
+@cdr
+class IntSequence:
     seq: int
     keyval: sequence[int]
+
+
+@cdr
+class StrSequence:
+    seq: int
+    keyval: sequence[str, 100]  # max 100 string elements

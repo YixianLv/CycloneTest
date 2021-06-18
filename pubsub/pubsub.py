@@ -5,7 +5,7 @@ import argparse
 import re
 import json
 from dataclasses import fields
-from datastruct import Integer, String, Array, Sequence
+from datastruct import Integer, String, IntArray, StrArray, IntSequence, StrSequence
 from util import qos_help_msg, QosMapper, default_qos_val
 from cyclonedds.core import Listener, DDSException, WaitSet, ReadCondition, ViewState, InstanceState, SampleState
 from cyclonedds.domain import DomainParticipant
@@ -24,27 +24,24 @@ class QosListener(Listener):
 
 class Topicmanger():
     def __init__(self, args, dp, qos, waitset):
+        self.dp = dp
         self.topic_name = args.topic
         self.seq = -1
-        tqos, pqos, sqos, wqos, rqos = qos
+        self.tqos, self.pqos, self.sqos, self.wqos, self.rqos = qos
+        self.reader = []
         try:
-            listener = QosListener()
-            int_topic = Topic(dp, self.topic_name + "int", Integer, qos=tqos)
-            str_topic = Topic(dp, self.topic_name, String, qos=tqos)
-            array_topic = Topic(dp, self.topic_name + "array", Array, qos=tqos)
-            seq_topic = Topic(dp, self.topic_name + "seq", Sequence, qos=tqos)
-            self.pub = Publisher(dp, qos=pqos)
-            self.sub = Subscriber(dp, qos=sqos)
-            self.int_writer = DataWriter(self.pub, int_topic, qos=wqos)
-            self.str_writer = DataWriter(self.pub, str_topic, qos=wqos)
-            self.array_writer = DataWriter(self.pub, array_topic, qos=wqos)
-            self.seq_writer = DataWriter(self.pub, seq_topic, qos=wqos)
-            self.reader = [DataReader(self.sub, int_topic, qos=rqos, listener=listener),
-                           DataReader(self.sub, str_topic, qos=rqos),
-                           DataReader(self.sub, array_topic, qos=rqos),
-                           DataReader(self.sub, seq_topic, qos=rqos)]
+            self.listener = QosListener()
+            self.pub = Publisher(dp, qos=self.pqos)
+            self.sub = Subscriber(dp, qos=self.sqos)
+            self.int_writer = self.create_entities("int", Integer)
+            self.str_writer = self.create_entities("str", String)
+            self.int_array_writer = self.create_entities("int_array", IntArray)
+            self.str_array_writer = self.create_entities("str_array", StrArray)
+            self.int_seq_writer = self.create_entities("int_seq", IntSequence)
+            self.str_seq_writer = self.create_entities("str_seq", StrSequence)
         except DDSException:
             raise SystemExit("Error: The arguments inputted are considered invalid for cyclonedds.")
+
         self.read_cond = ReadCondition(self.reader[0], ViewState.Any | InstanceState.Alive | SampleState.NotRead)
         waitset.attach(self.read_cond)
 
@@ -53,11 +50,25 @@ class Topicmanger():
         if type(input) is int:
             self.int_writer.write(Integer(self.seq, input))
         elif type(input) is list:
-            array_length = Array.__annotations__['keyval'].__metadata__[0].length
-            if len(input) == array_length:
-                self.array_writer.write(Array(self.seq, input))
+            for i in input:
+                if not isinstance(i, type(input[0])):
+                    raise Exception("TypeError: Element type inconsistent, " +
+                                    "input list should be a list of integer or a list of string.")
+
+            # Write array or sequence of integer
+            if isinstance(input[0], int):
+                int_arr_len = IntArray.__annotations__['keyval'].__metadata__[0].length
+                if len(input) == int_arr_len:
+                    self.int_array_writer.write(IntArray(self.seq, input))
+                else:
+                    self.int_seq_writer.write(IntSequence(self.seq, input))
+            # Write array or sequence of string
             else:
-                self.seq_writer.write(Sequence(self.seq, input))
+                str_arr_len = StrArray.__annotations__['keyval'].__metadata__[0].length
+                if len(input) == str_arr_len:
+                    self.str_array_writer.write(StrArray(self.seq, input))
+                else:
+                    self.str_seq_writer.write(StrSequence(self.seq, input))
         else:
             self.str_writer.write(String(self.seq, input))
 
@@ -65,6 +76,15 @@ class Topicmanger():
         for reader in self.reader:
             for sample in reader.take(N=100):
                 print(f"Subscriberd: {sample}")
+
+    def create_entities(self, name, datastruct):
+        topic = Topic(self.dp, self.topic_name + name, datastruct, qos=self.tqos)
+        writer = DataWriter(self.pub, topic, qos=self.wqos)
+        if name == "int":
+            self.reader.append(DataReader(self.sub, topic, qos=self.rqos, listener=self.listener))
+        else:
+            self.reader.append(DataReader(self.sub, topic, qos=self.rqos))
+        return writer
 
 
 class Qosmanager():
