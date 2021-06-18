@@ -5,7 +5,7 @@ import argparse
 import re
 import json
 from dataclasses import fields
-from datastruct import Integer, String
+from datastruct import Integer, String, Array, Sequence
 from util import qos_help_msg, QosMapper, default_qos_val
 from cyclonedds.core import Listener, DDSException, WaitSet, ReadCondition, ViewState, InstanceState, SampleState
 from cyclonedds.domain import DomainParticipant
@@ -31,31 +31,40 @@ class Topicmanger():
             listener = QosListener()
             int_topic = Topic(dp, self.topic_name + "int", Integer, qos=tqos)
             str_topic = Topic(dp, self.topic_name, String, qos=tqos)
+            array_topic = Topic(dp, self.topic_name + "array", Array, qos=tqos)
+            seq_topic = Topic(dp, self.topic_name + "seq", Sequence, qos=tqos)
             self.pub = Publisher(dp, qos=pqos)
             self.sub = Subscriber(dp, qos=sqos)
             self.int_writer = DataWriter(self.pub, int_topic, qos=wqos)
-            self.int_reader = DataReader(self.sub, int_topic, qos=rqos, listener=listener)
             self.str_writer = DataWriter(self.pub, str_topic, qos=wqos)
-            self.str_reader = DataReader(self.sub, str_topic, qos=rqos)
+            self.array_writer = DataWriter(self.pub, array_topic, qos=wqos)
+            self.seq_writer = DataWriter(self.pub, seq_topic, qos=wqos)
+            self.reader = [DataReader(self.sub, int_topic, qos=rqos, listener=listener),
+                           DataReader(self.sub, str_topic, qos=rqos),
+                           DataReader(self.sub, array_topic, qos=rqos),
+                           DataReader(self.sub, seq_topic, qos=rqos)]
         except DDSException:
             raise SystemExit("Error: The arguments inputted are considered invalid for cyclonedds.")
-        self.read_cond = ReadCondition(self.int_reader, ViewState.Any | InstanceState.Alive | SampleState.NotRead)
+        self.read_cond = ReadCondition(self.reader[0], ViewState.Any | InstanceState.Alive | SampleState.NotRead)
         waitset.attach(self.read_cond)
 
     def write(self, input):
         self.seq += 1
         if type(input) is int:
-            msg = Integer(self.seq, input)
-            self.int_writer.write(msg)
+            self.int_writer.write(Integer(self.seq, input))
+        elif type(input) is list:
+            array_length = Array.__annotations__['keyval'].__metadata__[0].length
+            if len(input) == array_length:
+                self.array_writer.write(Array(self.seq, input))
+            else:
+                self.seq_writer.write(Sequence(self.seq, input))
         else:
-            msg = String(self.seq, input)
-            self.str_writer.write(msg)
+            self.str_writer.write(String(self.seq, input))
 
     def read(self):
-        for sample in self.int_reader.take(N=100):
-            print("Subscribed:", sample)
-        for sample in self.str_reader.take(N=100):
-            print("Subscribed:", sample)
+        for reader in self.reader:
+            for sample in reader.take(N=100):
+                print(f"Subscriberd: {sample}")
 
 
 class Qosmanager():
@@ -254,9 +263,9 @@ def main():
                 if input:
                     for text in sys.stdin.readline().split():
                         try:
-                            text = int(text)
+                            text = eval(text)
                             manager.write(text)
-                        except ValueError:
+                        except NameError:
                             manager.write(text.rstrip("\n"))
                 manager.read()
                 waitset.wait(duration(microseconds=20))
