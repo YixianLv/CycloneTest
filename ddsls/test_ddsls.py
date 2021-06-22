@@ -7,7 +7,7 @@ import subprocess
 
 from cyclonedds.domain import DomainParticipant
 from cyclonedds.topic import Topic
-from  testtopics import Message
+from testtopics import Message
 from cyclonedds.pub import DataWriter
 from cyclonedds.sub import DataReader
 from cyclonedds.util import duration, isgoodentity
@@ -69,6 +69,8 @@ def test_ddsls_empty():
 def test_participant_reported():
     ddsls = start_ddsls_watchmode(["-t", "dcpsparticipant"])
 
+    time.sleep(0.5)
+    
     dp = DomainParticipant(0)
 
     time.sleep(0.5)
@@ -105,6 +107,22 @@ def test_subscription_reported():
 
     data = stop_ddsls_watchmode(ddsls)
 
-    for sample in dr.take_iter(timeout=duration(milliseconds=10)):
-        assert sample.key in data["stdout"]
+    for msg in dr.take_iter(timeout=duration(milliseconds=10)):
+        # assert msg.key in data["stdout"]
+        assert msg.key == dp.guid
 
+
+def test_publication_reported():
+    ddsls = start_ddsls_watchmode(["-t", "dcpspublication"])
+
+    dp = DomainParticipant(0)
+    tp = Topic(dp, "MessageTopic", Message)
+    dw = DataWriter(dp, tp)
+    # msg = Message("Test Message")
+    # dw.write(msg)
+
+    time.sleep(0.5)
+
+    data = stop_ddsls_watchmode(ddsls)
+
+    assert str(dw.guid) in data["stdout"]
