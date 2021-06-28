@@ -26,6 +26,7 @@ class TopicManager:
         self.read_cond = ReadCondition(reader, ViewState.Any | InstanceState.Alive | SampleState.NotRead)
         self.disposed_cond = ReadCondition(reader, ViewState.Any | InstanceState.NotAliveDisposed | SampleState.Any)
 
+    # Read and print samples
     def poll(self):
         new_samples = []
         newly_disposed_samples = []
@@ -56,14 +57,17 @@ class TopicManager:
         if self.console_print and (new_samples or newly_disposed_samples):
             self.to_console(new_samples, newly_disposed_samples)
 
+    # Add new samples to dict
     def track_sample(self, sample):
         self.tracked_entities[str(sample.key)] = sample
 
+    # Collect disposed sample to a new dict and delete it from the original dict
     def untrack_sample(self, sample):
         if str(sample.key) in self.tracked_entities:
             self.tracked_disposed_entities[str(sample.key)] = self.tracked_entities[str(sample.key)]
             del self.tracked_entities[str(sample.key)]
 
+    # Track qos changes
     def check_qos_changes(self, sample):
         key = sample.key
         if self.qoses.get(key, 0) == 0:
@@ -80,10 +84,12 @@ class TopicManager:
                 sample = None
         return sample
 
+    # Wait for new / disposed samples
     def add_to_waitset(self, waitset):
         waitset.attach(self.read_cond)
         waitset.attach(self.disposed_cond)
 
+    # Format sample value for console printing in JSON
     def format_value(self, sample):
         if self.topic_type == "PARTICIPANT":
             return {
@@ -98,12 +104,14 @@ class TopicManager:
                 "qos": sample.qos.asdict()
             }
 
+    # Format sample for writing to file in JSON
     def as_dict(self):
         return {
             "New": {k: self.format_value(v) for k, v in self.tracked_entities.items()},
             "Disposed": {k: self.format_value(v) for k, v in self.tracked_disposed_entities.items()}
         }
 
+    # Print to console in JSON or non-JSON format
     def to_console(self, new_samples, newly_disposed_samples):
         if self.enable_json:
             if new_samples:
@@ -122,15 +130,16 @@ class TopicManager:
             if new_samples:
                 print(f"\n-- New {self.topic_type} --")
                 for sample in new_samples:
-                    print("\n".join(f" {item}: {sample.__dict__[item]}" for item in sample.__dict__ 
+                    print("\n".join(f" {item}: {sample.__dict__[item]}" for item in sample.__dict__
                           if item != "sample_info") + "\n")
             if newly_disposed_samples:
                 print(f"\n-- Disposed {self.topic_type} --")
                 for sample in newly_disposed_samples:
-                    print("\n".join(f" {item}: {sample.__dict__[item]}" for item in sample.__dict__ 
+                    print("\n".join(f" {item}: {sample.__dict__[item]}" for item in sample.__dict__
                           if item != "sample_info") + "\n")
 
 
+# Check the topic(s)
 def parse_args(args):
     if args.topic:
         if args.topic == "dcpsparticipant":
@@ -163,6 +172,7 @@ def create_parser():
     return args
 
 
+# Format samples in JSON
 class JsonWriter:
     first = True
 
@@ -173,6 +183,7 @@ class JsonWriter:
         cls.first = False
         json.dump(data, sys.stdout, indent=4)
 
+
 def main():
     managers = []
     args = create_parser()
@@ -181,12 +192,14 @@ def main():
     waitset = WaitSet(dp)
 
     for topic_type, topic in topics:
+        # Create TopicManager for each topic
         managers.append(TopicManager(BuiltinDataReader(dp, topic), topic_type, args))
         managers[-1].add_to_waitset(waitset)
 
     if not args.filename and args.json:
         print("[")
 
+    # Watchmode
     if args.watch:
         try:
             while True:
@@ -195,6 +208,7 @@ def main():
                     manager.poll()
         except KeyboardInterrupt:
             pass
+    # Non-watchmode
     else:
         time_start = datetime.datetime.now()
         while datetime.datetime.now() < time_start + datetime.timedelta(seconds=1):
@@ -204,6 +218,7 @@ def main():
     if not args.filename and args.json:
         print("]")
 
+    # Write to file
     if args.filename:
         try:
             with open(args.filename, 'w') as f:

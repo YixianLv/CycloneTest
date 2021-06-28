@@ -19,9 +19,9 @@ from cyclonedds.core import Qos, Policy, WaitSet, ReadCondition, ViewState, Inst
 
 def run_ddsls(args, timeout=10):
     ddsls_process = subprocess.Popen(["ddsls.py"] + args,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+                                     stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE,
+                                     )
 
     try:
         stdout, stderr = ddsls_process.communicate(timeout=timeout)
@@ -38,9 +38,9 @@ def run_ddsls(args, timeout=10):
 
 def start_ddsls_watchmode(args):
     ddsls_process = subprocess.Popen(["ddsls.py", "--watch"] + args,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+                                     stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE,
+                                     )
     return ddsls_process
 
 
@@ -375,7 +375,7 @@ def test_all_entities_json_reported():
             if val["key"] == str(dr.guid):
                 assert (dr.get_qos()).asdict() == val["qos"]
                 reader_check = True
-    assert reader_check & writer_check
+    assert reader_check and writer_check
 
 
 def test_all_entities_watch_reported():
@@ -427,7 +427,7 @@ def test_all_entities_watch_json_reported():
             if val["key"] == str(dr.guid):
                 assert (dr.get_qos()).asdict() == val["qos"]
                 reader_check = True
-    assert reader_check & writer_check
+    assert reader_check and writer_check
 
 
 def test_write_to_file(tmp_path):
@@ -478,7 +478,7 @@ def test_write_disposed_data_to_file(tmp_path):
     cond = ReadCondition(dr, ViewState.Any | InstanceState.NotAliveDisposed | SampleState.Any)
     waitset.attach(cond)
 
-    del dp, tp, dw, dr
+    del dp
     gc.collect()
     time.sleep(0.5)
 
