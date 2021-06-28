@@ -3,6 +3,7 @@ import json
 import time
 import signal
 import os
+import gc
 
 import subprocess
 
@@ -11,7 +12,7 @@ from cyclonedds.topic import Topic
 from testtopics import Message
 from cyclonedds.pub import DataWriter
 from cyclonedds.sub import DataReader
-from cyclonedds.core import Qos, Policy
+from cyclonedds.core import Qos, Policy, WaitSet, ReadCondition, ViewState, InstanceState, SampleState
 
 
 # Helper functions
@@ -473,9 +474,13 @@ def test_write_disposed_data_to_file(tmp_path):
     }
     time.sleep(2)
 
-    del dp, tp, dw, dr
+    waitset = WaitSet(dp)
+    cond = ReadCondition(dr, ViewState.Any | InstanceState.NotAliveDisposed | SampleState.Any)
+    waitset.attach(cond)
 
-    time.sleep(10)
+    del dp, tp, dw, dr
+    gc.collect()
+    time.sleep(0.5)
 
     stop_ddsls_watchmode(ddsls)
 
