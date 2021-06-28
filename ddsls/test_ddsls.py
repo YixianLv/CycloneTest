@@ -59,21 +59,6 @@ def stop_ddsls_watchmode(ddsls_process, timeout=10):
     }
 
 
-def run_write_disposed_test(timeout=2):
-    test_process = subprocess.Popen(["write_disposed_test.py"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-
-    try:
-        stdout, _ = test_process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired as e:
-        test_process.kill()
-        raise e
-
-    return stdout.decode()
-
-
 # Tests
 
 def test_participant_empty():
@@ -346,7 +331,7 @@ def test_publication_json_watch_reported():
     assert writer_check
 
 
-def test_all_entities_reorted():
+def test_all_entities_reported():
     dp = DomainParticipant(0)
     tp = Topic(dp, "MessageTopic", Message)
     dw = DataWriter(dp, tp)
@@ -364,7 +349,7 @@ def test_all_entities_reorted():
     assert str(dr.get_qos()) in data["stdout"]
 
 
-def test_all_entities_json_reorted():
+def test_all_entities_json_reported():
     dp = DomainParticipant(0)
     tp = Topic(dp, "MessageTopic", Message)
     dw = DataWriter(dp, tp)
@@ -392,7 +377,7 @@ def test_all_entities_json_reorted():
     assert reader_check & writer_check
 
 
-def test_all_entities_watch_reorted():
+def test_all_entities_watch_reported():
     ddsls = start_ddsls_watchmode(["-a"])
 
     dp = DomainParticipant(0)
@@ -413,7 +398,7 @@ def test_all_entities_watch_reorted():
     assert str(dr.get_qos()) in data["stdout"]
 
 
-def test_all_entities_watch_json_reorted():
+def test_all_entities_watch_json_reported():
     ddsls = start_ddsls_watchmode(["--json", "-a"])
 
     dp = DomainParticipant(0)
@@ -444,7 +429,7 @@ def test_all_entities_watch_json_reorted():
     assert reader_check & writer_check
 
 
-def test_write_to_file():
+def test_write_to_file(tmp_path):
     dp = DomainParticipant(0)
     tp = Topic(dp, "MessageTopic", Message)
     dw = DataWriter(dp, tp)
@@ -452,11 +437,11 @@ def test_write_to_file():
 
     time.sleep(0.5)
 
-    run_ddsls(["--json", "-a", "--filename", "test.json"])
+    run_ddsls(["--json", "-a", "--filename", tmp_path/"test.json"])
 
     time.sleep(0.5)
 
-    data = json.load(open("test.json",))
+    data = json.load(open(tmp_path/"test.json",))
 
     assert str(dw.guid) in data["PUBLICATION"]["New"]
     assert str(dr.guid) in data["SUBSCRIPTION"]["New"]
@@ -466,15 +451,29 @@ def test_write_to_file():
     assert tp.name in data["SUBSCRIPTION"]["New"][str(dr.guid)]["topic_name"]
     assert tp.typename in data["SUBSCRIPTION"]["New"][str(dr.guid)]["type_name"]
 
-    os.remove("test.json")
+    os.remove(tmp_path/"test.json")
 
 
-def test_write_disposed_data_to_file():
-    ddsls = start_ddsls_watchmode(["--json", "-a", "-w", "--filename", "test_disposed.json"])
+def test_write_disposed_data_to_file(tmp_path):
+    ddsls = start_ddsls_watchmode(["--json", "-a", "-w", "--filename", tmp_path/"test_disposed.json"])
 
     time.sleep(0.5)
 
-    disposed_data = json.loads(run_write_disposed_test())
+    dp = DomainParticipant(0)
+    tp = Topic(dp, "MessageTopic", Message)
+    dw = DataWriter(dp, tp)
+    dr = DataReader(dp, tp)
+
+    disposed_data = {
+        "dp.guid": str(dp.guid),
+        "tp.name": tp.name,
+        "tp.typename": tp.typename,
+        "dw.guid": str(dw.guid),
+        "dr.guid": str(dr.guid)
+    }
+    time.sleep(2)
+
+    del dp, tp, dw, dr
 
     time.sleep(10)
 
@@ -482,7 +481,7 @@ def test_write_disposed_data_to_file():
 
     time.sleep(0.5)
 
-    data = json.load(open("test_disposed.json",))
+    data = json.load(open(tmp_path/"test_disposed.json",))
 
     dw_guid = disposed_data["dw.guid"]
     dr_guid = disposed_data["dr.guid"]
@@ -498,7 +497,7 @@ def test_write_disposed_data_to_file():
     assert disposed_data["tp.typename"] == data["PUBLICATION"]["Disposed"][dw_guid]["type_name"]
     assert disposed_data["tp.typename"] == data["SUBSCRIPTION"]["Disposed"][dr_guid]["type_name"]
 
-    os.remove("test_disposed.json")
+    os.remove(tmp_path/"test_disposed.json")
 
 
 def test_domain_id():
