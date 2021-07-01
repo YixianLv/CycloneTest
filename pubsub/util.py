@@ -1,36 +1,8 @@
-from cyclonedds.core import Qos, Policy
+from cyclonedds.core import Qos
 from dataclasses import fields
 import typing
-
-
-dds_infinity = 9223372036854775807
-
-
-default_qos_val = {
-    "Policy.Deadline": [dds_infinity],
-    "Policy.DurabilityService": [0, Policy.History.KeepLast(1), dds_infinity, dds_infinity, dds_infinity],
-    "Policy.Groupdata": ["".encode()],
-    "Policy.History.KeepLast": [1],
-    "Policy.LatencyBudget": [0],
-    "Policy.Lifespan": [dds_infinity],
-    "Policy.Liveliness.Automatic": [dds_infinity],
-    "Policy.Liveliness.ManualByParticipant": [dds_infinity],
-    "Policy.Liveliness.ManualByTopic": [dds_infinity],
-    "Policy.OwnershipStrength": [0],
-    "Policy.Partition": [""],
-    "Policy.PresentationAccessScope.Instance": [False, False],
-    "Policy.PresentationAccessScope.Topic": [False, False],
-    "Policy.PresentationAccessScope.Group": [False, False],
-    "Policy.ReaderDataLifecycle": [dds_infinity, dds_infinity],
-    "Policy.Reliability.BestEffort": [100],
-    "Policy.Reliability.Reliable": [100],
-    "Policy.ResourceLimits": [dds_infinity, dds_infinity, dds_infinity],
-    "Policy.TimeBasedFilter": [0],
-    "Policy.Topicdata": ["".encode()],
-    "Policy.TransportPriority": [0],
-    "Policy.Userdata": ["".encode()],
-    "Policy.WriterDataLifecycle": [True]
-}
+import sys
+import argparse
 
 
 def qos_help():
@@ -46,10 +18,9 @@ def qos_help():
         policy_name = name.replace("Policy.", "")
         _fields = fields(policy)
         if len(_fields) == 0:
-            qos_help.append("-q " f"{policy_name}")
+            qos_help.append("--qos " f"{policy_name}\n")
         else:
             out = []
-            d_val = []
             for f in _fields:
                 if f.type in name_map:
                     out.append(f"[{f.name}<{name_map[f.type]}>]")
@@ -60,108 +31,37 @@ def qos_help():
                         out.append(f"[{f.name}<Sequence[str]>]")
                     else:
                         out.append(f"[{f.name}<{f.type}>]")
-            for d in default_qos_val[name]:
-                if d == dds_infinity:
-                    d_val.append("inf")
-                elif d == "":
-                    d_val.append("''")
-                else:
-                    d_val.append(str(d))
-            qos_help.append("-q " f"{policy_name} {', '.join(out)}\n   (default: {', '.join(d_val)})")
+            qos_help.append("--qos " f"{policy_name} {', '.join(out)}\n")
     return qos_help
 
 
-qos_help_msg = str('''e.g.:
-    -q Durability.TransientLocal
-    -q History.KeepLast 10
-    -q ReaderDataLifecycle 10, 20
-    -q Partition [a, b, 123]
-    -q PresentationAccessScope.Instance False, True
-    -q DurabilityService 1000, History.KeepLast 10, 100, 10, 10\n\n''' +
-                   "Available QoS and usage are:\n" + "\n".join(map(str, qos_help())))
+qos_help_msg = str(f"""e.g.:
+    --qos Durability.TransientLocal
+    --qos History.KeepLast 10
+    --qos ReaderDataLifecycle 10, 20
+    --qos Partition [a, b, 123]
+    --qos PresentationAccessScope.Instance False, True
+    --qos DurabilityService 1000, History.KeepLast 10, 100, 10, 10\n
+    \rAvailable QoS and usage are:\n {' '.join(map(str, qos_help()))}\n""")
 
 
-class QosMapper():
-    topic = {
-        "Policy.Deadline",
-        "Policy.DestinationOrder.ByReceptionTimestamp",
-        "Policy.DestinationOrder.BySourceTimestamp",
-        "Policy.Durability.Volatile",
-        "Policy.Durability.TransientLocal",
-        "Policy.Durability.Transient",
-        "Policy.Durability.Persistent",
-        "Policy.DurabilityService",
-        "Policy.History.KeepLast",
-        "Policy.History.KeepAll",
-        "Policy.LatencyBudget",
-        "Policy.Lifespan",
-        "Policy.Liveliness.Automatic",
-        "Policy.Liveliness.ManualByParticipant",
-        "Policy.Liveliness.ManualByTopic",
-        "Policy.Ownership.Shared",
-        "Policy.Ownership.Exclusive",
-        "Policy.Reliability.BestEffort",
-        "Policy.Reliability.Reliable",
-        "Policy.ResourceLimits",
-        "Policy.Topicdata",
-        "Policy.TransportPriority"
-    }
-
-    pubsub = {
-        "Policy.Groupdata",
-        "Policy.Partition",
-        "Policy.PresentationAccessScope.Instance",
-        "Policy.PresentationAccessScope.Topic",
-        "Policy.PresentationAccessScope.Group"
-    }
-
-    writer = {
-        "Policy.Deadline",
-        "Policy.DestinationOrder.ByReceptionTimestamp",
-        "Policy.DestinationOrder.BySourceTimestamp",
-        "Policy.Durability.Volatile",
-        "Policy.Durability.TransientLocal",
-        "Policy.Durability.Transient",
-        "Policy.Durability.Persistent",
-        "Policy.DurabilityService",
-        "Policy.History.KeepLast",
-        "Policy.History.KeepAll",
-        "Policy.LatencyBudget",
-        "Policy.Lifespan",
-        "Policy.Liveliness.Automatic",
-        "Policy.Liveliness.ManualByParticipant",
-        "Policy.Liveliness.ManualByTopic",
-        "Policy.Ownership.Shared",
-        "Policy.Ownership.Exclusive",
-        "Policy.OwnershipStrength",
-        "Policy.Reliability.BestEffort",
-        "Policy.Reliability.Reliable",
-        "Policy.ResourceLimits",
-        "Policy.TransportPriority",
-        "Policy.Userdata",
-        "WriterDataLifecycle"
-    }
-
-    reader = {
-        "Policy.Deadline",
-        "Policy.DestinationOrder.ByReceptionTimestamp",
-        "Policy.DestinationOrder.BySourceTimestamp",
-        "Policy.Durability.Volatile",
-        "Policy.Durability.TransientLocal",
-        "Policy.Durability.Transient",
-        "Policy.Durability.Persistent",
-        "Policy.History.KeepLast",
-        "Policy.History.KeepAll",
-        "Policy.LatencyBudget",
-        "Policy.Liveliness.Automatic",
-        "Policy.Liveliness.ManualByParticipant",
-        "Policy.Liveliness.ManualByTopic",
-        "Policy.Ownership.Shared",
-        "Policy.Ownership.Exclusive",
-        "Policy.ReaderDataLifecycle",
-        "Policy.Reliability.BestEffort",
-        "Policy.Reliability.Reliable",
-        "Policy.ResourceLimits",
-        "Policy.TimeBasedFilter",
-        "Policy.Userdata"
-    }
+def create_parser():
+    parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("-T", "--topic", type=str, help="The name of the topic to publish/subscribe to")
+    parser.add_argument("-e", "--entity", choices=["qos-all", "qos-topic", "qos-publisher", "qos-subscriber",
+                        "qos-datawriter", "qos-datareader"], help="""Select the entites to set the qos.
+Choose between all entities, topic, publisher, subscriber, datawriter and datareader. (default: qos-all).
+Inapplicable qos will be ignored.""")
+    parser.add_argument("-q", "--qos", nargs="+",
+                        help="Set QoS for entities, check '--qoshelp' for available QoS and usage\n")
+    group.add_argument("--qoshelp", action="store_true", help=qos_help_msg)
+    if len(sys.argv) == 1:
+        parser.print_help(sys.stderr)
+    args = parser.parse_args()
+    if args.qoshelp:
+        print(qos_help_msg)
+        sys.exit(0)
+    if args.entity and not args.qos:
+        raise SystemExit("Error: The following argument is required: -q/--qos")
+    return args
