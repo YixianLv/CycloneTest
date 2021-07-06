@@ -41,27 +41,29 @@ qos_help_msg = str(f"""e.g.:
     --qos ReaderDataLifecycle 10, 20
     --qos Partition [a, b, 123]
     --qos PresentationAccessScope.Instance False, True
-    --qos DurabilityService 1000, History.KeepLast 10, 100, 10, 10\n
+    --qos DurabilityService 1000, History.KeepLast 10, 100, 10, 10
+    --qos Durability.TransientLocal History.KeepLast 10\n
     \rAvailable QoS and usage are:\n {' '.join(map(str, qos_help()))}\n""")
 
 
-def create_parser():
+def create_parser(args):
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("-T", "--topic", type=str, help="The name of the topic to publish/subscribe to")
-    parser.add_argument("-e", "--entity", choices=["qos-all", "qos-topic", "qos-publisher", "qos-subscriber",
-                        "qos-datawriter", "qos-datareader"], help="""Select the entites to set the qos.
-Choose between all entities, topic, publisher, subscriber, datawriter and datareader. (default: qos-all).
+    parser.add_argument("-eqos", "--entityqos", choices=["all", "topic", "publisher", "subscriber",
+                        "datawriter", "datareader"], help="""Select the entites to set the qos.
+Choose between all entities, topic, publisher, subscriber, datawriter and datareader. (default: all).
 Inapplicable qos will be ignored.""")
     parser.add_argument("-q", "--qos", nargs="+",
                         help="Set QoS for entities, check '--qoshelp' for available QoS and usage\n")
     group.add_argument("--qoshelp", action="store_true", help=qos_help_msg)
+    parser.add_argument("-r", "--runtime", type=float, help="Limit the runtime of the tool, in seconds.")
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
-    args = parser.parse_args()
+    args = parser.parse_args(args)
     if args.qoshelp:
         print(qos_help_msg)
         sys.exit(0)
-    if args.entity and not args.qos:
+    if args.entityqos and not args.qos:
         raise SystemExit("Error: The following argument is required: -q/--qos")
     return args

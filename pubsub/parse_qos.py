@@ -87,7 +87,6 @@ class QosParser:
         raise Exception(f"Cannot parse type {_type}, this is a bug, please report it.")
 
     def pop(self) -> str:
-        print(f"self.pos = {self.pos}\nself.data = {self.data}")
         # Safely return the next item in the parse list and increment the position
         if self.pos >= len(self.data):
             raise Exception("Unexpected end of arguments")
@@ -160,4 +159,4 @@ class QosParser:
     def binary_data(self):
         # Support Userdata, Groupdata or Topicdata as base64 encoded string.
         data = self.string()
-        return b64decode(data)
+        return data.encode()

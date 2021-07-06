@@ -7,7 +7,7 @@ from cyclonedds.core import Listener, DDSException, ReadCondition, ViewState, In
 
 class QosListener(Listener):
     def on_requested_incompatible_qos(self, reader, status):
-        print("WARNING: The Qos requested by the reader is incompatible to the Qos offered by the writer. " +
+        print("WARNING: The Qos requested for subscription is incompatible with the Qos offered by publication." +
               "PubSub may not be available.")
 
 
