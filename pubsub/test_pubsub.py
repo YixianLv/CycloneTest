@@ -7,19 +7,17 @@ import concurrent
 
 import subprocess
 
-from cyclonedds.domain import DomainParticipant
-from cyclonedds.pub import DataWriter
-from cyclonedds.sub import DataReader
-from cyclonedds.core import Qos, Policy, WaitSet, ReadCondition, ViewState, InstanceState, SampleState
+from cyclonedds.core import Qos, Policy
+from cyclonedds.util import duration
 
 
 # Helper functions
 
 
-text = "test 420 [4,2,0] ['test','str','array','data','struct'] [2,183] ['test','string','sequence']"
+input = "test 420 [4,2,0] ['test','str','array','data','struct'] [2,183] ['test','string','sequence']"
 
 
-def run_pubsub(args, timeout=10):
+def run_pubsub(args, text=input, timeout=10):
     process = subprocess.Popen(["python3",
                                os.path.join(os.path.dirname(__file__), "..", "tools", "pubsub", "pubsub.py")] + args,
                                stdin=subprocess.PIPE,
@@ -88,13 +86,46 @@ def test_pubsub_topics():
     assert "StrSequence(seq=5, keyval=['test', 'string', 'sequence'])" in pubsub["stdout"]
 
 
-def test_qos():
-    pubsub, ddsls = run_pubsub_ddsls(["-T", "test", "--qos", "Durability.TransientLocal"],
-                                     ["-a"],
-                                     runtime=3)
+def test_parse_qos():
+    tests = [
+    (
+        ["History.Keepall, Durabilityservice: seconds=10, history.keeplast 100, 2000, 1000, 1000,",
+         "IgnoreLocal.Process, Partition: one, two, three, WriterDataLifecycle: off"],
+        Qos(
+            Policy.History.KeepAll,
+            Policy.DurabilityService(
+                duration(seconds=10),
+                Policy.History.KeepLast(100),
+                2000,
+                1000,
+                1000
+            ),
+            Policy.IgnoreLocal.Process,
+            Policy.Partition(["one", "two", "three"]),
+            Policy.WriterDataLifecycle(False)
+        )
+    ),
+    (
+        ["Lifespan", "seconds=1000;days=12", "Durability.TransientLocal"],
+        Qos(
+            Policy.Lifespan(duration(seconds=1000, days=12)),
+            Policy.Durability.TransientLocal
+        )
+    ),
+    ([], Qos()),
+    (["UserdaTA", "HelloWorld"], Qos(Policy.Userdata(b"HelloWorld"))),
+    (["Policy.history.KeepLast 1000"], Qos(Policy.History.KeepLast(1000))),
+    (["resourcelimits 100 -1 100"], Qos(Policy.ResourceLimits(100, -1, 100)))
+]
 
-    assert "Durability.TransientLocal" in ddsls["stdout"]
-    assert "Integer(seq=1, keyval=420)" in pubsub["stdout"]
+    for (input, result) in tests:
+        pubsub, ddsls = run_pubsub_ddsls(["-T", "test", "-q", ' '.join(input)],
+                                  ["-a"],
+                                  runtime=3)
+        for r in result:
+            assert str(r) in ddsls["stdout"]
+
+        assert "Integer(seq=1, keyval=420)" in pubsub["stdout"]
 
 
 def test_multiple_qoses():
@@ -199,14 +230,12 @@ def test_subscriber_qos():
                                          ["-t", "dcpspublication"], runtime=3)
 
     assert "PresentationAccessScope.Instance(coherent_access=False, ordered_access=True)" not in ddsls_pub["stdout"]
-    assert "Integer(seq=1, keyval=420)" in pubsub["stdout"]
 
     pubsub, ddsls_sub = run_pubsub_ddsls(["-T", "test", "-eqos", "subscriber",
                                           "-q", "PresentationAccessScope.Instance", "False, True"],
                                          ["-t", "dcpssubscription"], runtime=3)
 
     assert "PresentationAccessScope.Instance(coherent_access=False, ordered_access=True)" in ddsls_sub["stdout"]
-    assert "Integer(seq=1, keyval=420)" in pubsub["stdout"]
 
 
 def test_subscriber_multiple_qoses():
@@ -339,3 +368,54 @@ def test_qos_help():
     assert "--qos Partition [partitions<Sequence[str]>]" in pubsub["stdout"]
     assert "--qos DurabilityService [cleanup_delay<integer>], [History.KeepAll / History.KeepLast [depth<integer>]], \
 [max_samples<integer>], [max_instances<integer>], [max_samples_per_instance<integer>]" in pubsub["stdout"]
+
+
+# test error messages
+
+
+def test_qos_policy_error():
+    pubsub = run_pubsub(["-T", "test", "-q", "Hello"])
+    assert "No such policy policy.hello" in pubsub["stderr"]
+
+
+def test_multiple_qos_policy_error():
+    pubsub = run_pubsub(["-T", "test", "-q", "Durability.TransientLocal", "Durability.TransientLocal"])
+    assert "ValueError: Multiple Qos policies of type Durability" in pubsub["stderr"]
+
+
+def test_qos_policy_arguments_error():
+    pubsub = run_pubsub(["-T", "test", "-q", "History.KeepLast", "hey"])
+    assert "ValueError: invalid literal for int()" in pubsub["stderr"]
+
+    pubsub = run_pubsub(["-T", "test", "-q", "WriterDataLifecycle", "sure"])
+    assert "Invalid boolean sure" in pubsub["stderr"]
+
+
+def test_qos_policy_arguments_number_error():
+    pubsub = run_pubsub(["-T", "test", "-q", "History.KeepAll", "10"])
+    assert "No such policy policy.10" in pubsub["stderr"]
+
+    pubsub = run_pubsub(["-T", "test", "-q", "History.KeepLast"])
+    assert "Exception: Unexpected end of arguments" in pubsub["stderr"]
+
+    pubsub = run_pubsub(["-T", "test", "-q", "History.KeepLast", "10", "20"])
+    assert "Exception: No such policy policy.20" in pubsub["stderr"]
+
+
+def test_subqos_error():
+    pubsub = run_pubsub(["-T", "test", "-q", "DurabilityService", "100"])
+    assert "Exception: Unexpected end of arguments" in pubsub["stderr"]
+
+    pubsub = run_pubsub(["-T", "test", "-q", "DurabilityService", "100, ResourceLimits 1, 10, 10"])
+    assert "Exception: DurabilityService takes a History policy" in pubsub["stderr"]
+
+
+def test_incompatible_qos_value():
+    pubsub = run_pubsub(["-T", "test", "-q", "DurabilityService", "10, History.KeepLast 20, 30, 40, 50"])
+    assert "Exception: The arguments inputted are considered invalid for cyclonedds" in pubsub["stderr"]
+
+
+def test_input_data_error_msg():
+    mytext = "[1,'hello',2]"
+    pubsub = run_pubsub(["-T", "test"], text=mytext)
+    assert "Exception: TypeError: Element type inconsistent" in pubsub["stderr"]

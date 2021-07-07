@@ -10,6 +10,7 @@ from pubsub_topic import TopicManager
 from cyclonedds.core import WaitSet
 from cyclonedds.domain import DomainParticipant
 from cyclonedds.util import duration
+from cyclonedds.qos import Qos, Policy
 
 
 def main(sys_args):
@@ -18,8 +19,8 @@ def main(sys_args):
     if args.qos:
         qos = QosParser.parse(args.qos)
         eqos = entity_qos(qos, args.entityqos)
-
-    dp = DomainParticipant(0)
+    q = Qos(Policy.IgnoreLocal.Process)
+    dp = DomainParticipant(0, qos=q)
     waitset = WaitSet(dp)
     manager = TopicManager(args, dp, eqos, waitset)
     if args.topic:

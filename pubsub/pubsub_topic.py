@@ -29,7 +29,7 @@ class TopicManager():
             self.int_seq_writer = self.create_entities("int_seq", IntSequence)
             self.str_seq_writer = self.create_entities("str_seq", StrSequence)
         except DDSException:
-            raise SystemExit("Error: The arguments inputted are considered invalid for cyclonedds.")
+            raise Exception("The arguments inputted are considered invalid for cyclonedds.")
 
         self.read_cond = ReadCondition(self.reader[0], ViewState.Any | InstanceState.Alive | SampleState.NotRead)
         waitset.attach(self.read_cond)
