@@ -2,7 +2,6 @@ from cyclonedds.qos import BasePolicy, Qos, Policy
 from cyclonedds.util import duration
 
 from dataclasses import fields
-from base64 import b64decode
 from typing import Sequence, List, Union
 
 

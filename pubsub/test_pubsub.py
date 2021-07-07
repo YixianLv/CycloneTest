@@ -8,7 +8,6 @@ import concurrent
 import subprocess
 
 from cyclonedds.core import Qos, Policy
-from cyclonedds.util import duration
 
 
 # Helper functions
@@ -88,44 +87,100 @@ def test_pubsub_topics():
 
 def test_parse_qos():
     tests = [
-    (
-        ["History.Keepall, Durabilityservice: seconds=10, history.keeplast 100, 2000, 1000, 1000,",
-         "IgnoreLocal.Process, Partition: one, two, three, WriterDataLifecycle: off"],
-        Qos(
-            Policy.History.KeepAll,
-            Policy.DurabilityService(
-                duration(seconds=10),
-                Policy.History.KeepLast(100),
-                2000,
-                1000,
-                1000
-            ),
-            Policy.IgnoreLocal.Process,
-            Policy.Partition(["one", "two", "three"]),
-            Policy.WriterDataLifecycle(False)
-        )
-    ),
-    (
-        ["Lifespan", "seconds=1000;days=12", "Durability.TransientLocal"],
-        Qos(
-            Policy.Lifespan(duration(seconds=1000, days=12)),
-            Policy.Durability.TransientLocal
-        )
-    ),
-    ([], Qos()),
-    (["UserdaTA", "HelloWorld"], Qos(Policy.Userdata(b"HelloWorld"))),
-    (["Policy.history.KeepLast 1000"], Qos(Policy.History.KeepLast(1000))),
-    (["resourcelimits 100 -1 100"], Qos(Policy.ResourceLimits(100, -1, 100)))
-]
+                (
+                    [
+                        "Reliability.Reliable 10",
+                        "Durability.TransientLocal",
+                        "History.KeepLast 10",
+                        "ResourceLimits 100 -1 100",
+                        "PresentationAccessScope.Topic True False",
+                        "Lifespan 1",
+                        "Deadline seconds=1",
+                        "LatencyBudget 10",
+                        "Ownership.Exclusive",
+                        "OwnershipStrength 20",
+                        "Liveliness.ManualByParticipant 10",
+                        "TimeBasedFilter 10",
+                        "Partition Hello, world",
+                        "TransportPriority 1",
+                        "DestinationOrder.BySourceTimestamp",
+                        "WriterDataLifecycle False",
+                        "ReaderDataLifecycle 10 10",
+                        "DurabilityService 10 History.KeepLast 100, 2000, 1000, 1000",
+                        "Userdata HiUser",
+                        "Groupdata HiGroup",
+                        "Topicdata HiTopic"
+                    ],
+                    Qos(
+                        Policy.Reliability.Reliable(max_blocking_time=10),
+                        Policy.Durability.TransientLocal,
+                        Policy.History.KeepLast(depth=10),
+                        Policy.ResourceLimits(max_samples=100, max_instances=-1, max_samples_per_instance=100),
+                        Policy.PresentationAccessScope.Topic(coherent_access=True, ordered_access=False),
+                        Policy.Lifespan(lifespan=1),
+                        Policy.Deadline(deadline=1000000000),
+                        Policy.LatencyBudget(budget=10),
+                        Policy.Ownership.Exclusive,
+                        Policy.OwnershipStrength(strength=20),
+                        Policy.Liveliness.ManualByParticipant(lease_duration=10),
+                        Policy.TimeBasedFilter(filter_time=10),
+                        Policy.Partition(partitions=('Hello', 'world')),
+                        Policy.TransportPriority(priority=1),
+                        Policy.DestinationOrder.BySourceTimestamp,
+                        Policy.WriterDataLifecycle(autodispose=False),
+                        Policy.ReaderDataLifecycle(autopurge_nowriter_samples_delay=10, autopurge_disposed_samples_delay=10),
+                        Policy.DurabilityService(cleanup_delay=10, history=Policy.History.KeepLast(depth=100),
+                                                 max_samples=2000, max_instances=1000, max_samples_per_instance=1000),
+                        Policy.Userdata(data=b'HiUser'),
+                        Policy.Groupdata(data=b'HiGroup'),
+                        Policy.Topicdata(data=b'HiTopic'),
+                    )
+                ),
+                (
+                    ["IgnoreLocal.Process"],
+                    Qos(Policy.IgnoreLocal.Process)
+                )
+            ]
 
     for (input, result) in tests:
         pubsub, ddsls = run_pubsub_ddsls(["-T", "test", "-q", ' '.join(input)],
-                                  ["-a"],
-                                  runtime=3)
-        for r in result:
-            assert str(r) in ddsls["stdout"]
+                                         ["-a"],
+                                         runtime=3)
+        for policy in result:
+            assert str(policy) in ddsls["stdout"]
 
-        assert "Integer(seq=1, keyval=420)" in pubsub["stdout"]
+
+def test_parse_qos_compatible_expressions():
+    tests = [
+                (
+                    [
+                        "Reliability.Reliable 10,",
+                        "History.KeepLast: 10",
+                        "ResourceLimits 100, -1 100",
+                        "PresentationAccessScope.Topic 1 no",
+                        "liFespAn seconds=1000;days=12",
+                        "deadline seconds=1",
+                        "WriterDataLifecycle off"
+                    ],
+                    [
+                        Policy.Reliability.Reliable(max_blocking_time=10),
+                        Policy.History.KeepLast(depth=10),
+                        Policy.ResourceLimits(max_samples=100, max_instances=-1, max_samples_per_instance=100),
+                        Policy.PresentationAccessScope.Topic(coherent_access=True, ordered_access=False),
+                        Policy.Lifespan(lifespan=1037800000000000),
+                        Policy.Deadline(deadline=1000000000),
+                        Policy.WriterDataLifecycle(autodispose=False)
+                    ]
+                )
+            ]
+
+    for (input, result) in tests:
+        pubsub, ddsls = run_pubsub_ddsls(["-T", "test", "-q", ' '.join(input)],
+                                         ["-a"],
+                                         runtime=3)
+        print(pubsub["stderr"])
+        for policy in result:
+            assert str(policy) in ddsls["stdout"]
 
 
 def test_multiple_qoses():
@@ -208,7 +263,8 @@ def test_publisher_qos():
 
 def test_publisher_multiple_qoses():
     pubsub, ddsls_pub = run_pubsub_ddsls(["-T", "test", "-eqos", "publisher",
-                                          "-q", "PresentationAccessScope.Instance", "False, True", "Groupdata", "TestPublisherQos"],
+                                          "-q", "PresentationAccessScope.Instance", "False, True",
+                                          "Groupdata", "TestPublisherQos"],
                                          ["-t", "dcpspublication"], runtime=3)
 
     assert "PresentationAccessScope.Instance(coherent_access=False, ordered_access=True)" in ddsls_pub["stdout"]
@@ -216,7 +272,8 @@ def test_publisher_multiple_qoses():
     assert "Integer(seq=1, keyval=420)" in pubsub["stdout"]
 
     pubsub, ddsls_sub = run_pubsub_ddsls(["-T", "test", "-eqos", "publisher",
-                                          "-q", "PresentationAccessScope.Instance", "False, True", "Groupdata", "TestPublisherQos"],
+                                          "-q", "PresentationAccessScope.Instance", "False, True",
+                                          "Groupdata", "TestPublisherQos"],
                                          ["-t", "dcpssubscription"], runtime=3)
 
     assert "PresentationAccessScope.Instance(coherent_access=False, ordered_access=True)" not in ddsls_sub["stdout"]
@@ -240,14 +297,16 @@ def test_subscriber_qos():
 
 def test_subscriber_multiple_qoses():
     pubsub, ddsls_pub = run_pubsub_ddsls(["-T", "test", "-eqos", "subscriber",
-                                          "-q", "PresentationAccessScope.Instance", "False, True", "Groupdata", "TestSubscriberQos"],
+                                          "-q", "PresentationAccessScope.Instance", "False, True",
+                                          "Groupdata", "TestSubscriberQos"],
                                          ["-t", "dcpspublication"], runtime=3)
 
     assert "PresentationAccessScope.Instance(coherent_access=False, ordered_access=True)" not in ddsls_pub["stdout"]
     assert "Groupdata(data=b'TestSubscriberQos')" not in ddsls_pub["stdout"]
 
     pubsub, ddsls_sub = run_pubsub_ddsls(["-T", "test", "-eqos", "subscriber",
-                                          "-q", "PresentationAccessScope.Instance", "False, True", "Groupdata", "TestSubscriberQos"],
+                                          "-q", "PresentationAccessScope.Instance", "False, True",
+                                          "Groupdata", "TestSubscriberQos"],
                                          ["-t", "dcpssubscription"], runtime=3)
 
     assert "PresentationAccessScope.Instance(coherent_access=False, ordered_access=True)" in ddsls_sub["stdout"]
@@ -416,6 +475,6 @@ def test_incompatible_qos_value():
 
 
 def test_input_data_error_msg():
-    mytext = "[1,'hello',2]"
-    pubsub = run_pubsub(["-T", "test"], text=mytext)
+    new_msg = "[1,'hello',2]"
+    pubsub = run_pubsub(["-T", "test"], text=new_msg)
     assert "Exception: TypeError: Element type inconsistent" in pubsub["stderr"]
