@@ -13,7 +13,7 @@ from cyclonedds.core import Qos, Policy
 # Helper functions
 
 
-input = "test 420 [4,2,0] ['test','str','array','data','struct'] [2,183] ['test','string','sequence']"
+input = "test 420 [4,2,0] ['test','str','array','data','struct'] [-1,183] ['test','string','sequence']"
 
 
 def run_pubsub(args, text=input, timeout=10):
@@ -24,7 +24,8 @@ def run_pubsub(args, text=input, timeout=10):
                                stderr=subprocess.PIPE,
                                )
     try:
-        process.stdin.write(text.encode())
+        if text:
+            process.stdin.write(text.encode())
         stdout, stderr = process.communicate(timeout=timeout)
         process.stdin.close()
     except subprocess.TimeoutExpired as e:
@@ -74,6 +75,12 @@ def run_pubsub_ddsls(pubsub_args, ddsls_args, runtime=5):
 # tests
 
 
+def test_pubsub_empty():
+    pubsub = run_pubsub(["-T", "test", "--runtime", "1"], text=None)
+    assert pubsub["stdout"] == ""
+    assert pubsub["status"] == 0
+
+
 def test_pubsub_topics():
     pubsub = run_pubsub(["-T", "test", "--runtime", "1"])
 
@@ -81,7 +88,7 @@ def test_pubsub_topics():
     assert "Integer(seq=1, keyval=420)" in pubsub["stdout"]
     assert "IntArray(seq=2, keyval=[4, 2, 0])" in pubsub["stdout"]
     assert "StrArray(seq=3, keyval=['test', 'str', 'array', 'data', 'struct'])" in pubsub["stdout"]
-    assert "IntSequence(seq=4, keyval=[2, 183])" in pubsub["stdout"]
+    assert "IntSequence(seq=4, keyval=[-1, 183])" in pubsub["stdout"]
     assert "StrSequence(seq=5, keyval=['test', 'string', 'sequence'])" in pubsub["stdout"]
 
 
